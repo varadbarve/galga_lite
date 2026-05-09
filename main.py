@@ -3,6 +3,8 @@ import random
 import sys
 import math
 import pygame
+import json
+import os
 
 # Constants
 WIDTH = 540
@@ -20,9 +22,8 @@ OBSTACLE_WIDTH = 52
 OBSTACLE_HEIGHT = 52
 BG_TOP = (8, 15, 35)
 BG_BOTTOM = (2, 6, 18)
-WHITE = (240, 245, 255)
+WHITE = (255, 255, 255) # Pure white for colorkey
 SHIP_COLOR = (90, 230, 255)
-OBSTACLE_COLOR = (255, 116, 116)
 ACCENT = (255, 198, 111)
 
 PHASES = [
@@ -31,6 +32,23 @@ PHASES = [
     {"name": "Phase 3", "start": 40, "spawn_interval": 0.55, "speed_min": 250, "speed_max": 350},
     {"name": "Phase 4", "start": 65, "spawn_interval": 0.40, "speed_min": 320, "speed_max": 420},
 ]
+
+# High Score Utility
+def load_high_score():
+    try:
+        if os.path.exists("highscore.json"):
+            with open("highscore.json", "r") as f:
+                return json.load(f).get("highscore", 0)
+    except:
+        pass
+    return 0
+
+def save_high_score(score):
+    try:
+        with open("highscore.json", "w") as f:
+            json.dump({"highscore": score}, f)
+    except:
+        pass
 
 class Particle:
     def __init__(self, x, y, vx, vy, life, color, size):
@@ -105,7 +123,7 @@ class Obstacle:
             rect = rotated.get_rect(center=self.rect.center)
             surface.blit(rotated, rect)
         else:
-            pygame.draw.rect(surface, OBSTACLE_COLOR, self.rect, border_radius=10)
+            pygame.draw.rect(surface, (255, 116, 116), self.rect, border_radius=10)
 
 def get_phase(elapsed_seconds):
     current = PHASES[0]
@@ -137,26 +155,44 @@ def draw_text_center(surface, text, font, color, center_x, y, shadow=True):
     rect = img.get_rect(midtop=(center_x, y))
     surface.blit(img, rect)
 
+class Button:
+    def __init__(self, text, x, y, w, h, font, color, hover_color):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.text = text
+        self.font = font
+        self.color = color
+        self.hover_color = hover_color
+        self.is_hovered = False
+
+    def update(self, mouse_pos):
+        self.is_hovered = self.rect.collidepoint(mouse_pos)
+
+    def draw(self, surface):
+        c = self.hover_color if self.is_hovered else self.color
+        pygame.draw.rect(surface, c, self.rect, border_radius=12)
+        pygame.draw.rect(surface, WHITE, self.rect, width=2, border_radius=12)
+        img = self.font.render(self.text, True, WHITE)
+        txt_rect = img.get_rect(center=self.rect.center)
+        surface.blit(img, txt_rect)
+
 async def game_loop():
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Galga Lite - Enhanced")
+    pygame.display.set_caption("Galga Lite - Neo")
 
     # Fonts
-    try:
-        title_font = pygame.font.Font(None, 72)
-        ui_font = pygame.font.Font(None, 36)
-        small_font = pygame.font.Font(None, 24)
-    except:
-        title_font = pygame.font.SysFont("consolas", 64, bold=True)
-        ui_font = pygame.font.SysFont("consolas", 28)
-        small_font = pygame.font.SysFont("consolas", 20)
+    title_font = pygame.font.SysFont("arial", 72, bold=True)
+    ui_font = pygame.font.SysFont("arial", 36, bold=True)
+    small_font = pygame.font.SysFont("arial", 24)
 
     # Assets
     try:
-        ship_img = pygame.image.load("assets/ship.png").convert_alpha()
+        ship_img = pygame.image.load("assets/ship.png").convert()
+        ship_img.set_colorkey((255, 255, 255)) # Remove white background
         ship_img = pygame.transform.scale(ship_img, (64, 64))
-        meteor_img = pygame.image.load("assets/meteor.png").convert_alpha()
+        
+        meteor_img = pygame.image.load("assets/meteor.png").convert()
+        meteor_img.set_colorkey((255, 255, 255)) # Remove white background
         meteor_img = pygame.transform.scale(meteor_img, (OBSTACLE_WIDTH, OBSTACLE_HEIGHT))
     except:
         ship_img = None
@@ -167,6 +203,10 @@ async def game_loop():
     stars = [Star() for _ in range(60)]
     ps = ParticleSystem()
 
+    # Buttons
+    play_btn = Button("PLAY", WIDTH // 2 - 100, 420, 200, 60, ui_font, (50, 150, 255), (80, 180, 255))
+    restart_btn = Button("RESTART", WIDTH // 2 - 100, 480, 200, 60, ui_font, (50, 200, 150), (80, 230, 180))
+
     # Game State
     player_rect = pygame.Rect(WIDTH // 2 - 32, HEIGHT - 100, 64, 64)
     player_vx = 0.0
@@ -176,6 +216,7 @@ async def game_loop():
     obstacles = []
     game_state = "menu"
     score = 0
+    high_score = load_high_score()
     elapsed = 0.0
     spawn_timer = 0.0
     phase_name = PHASES[0]["name"]
@@ -184,23 +225,32 @@ async def game_loop():
     while running:
         dt = clock.tick(FPS) / 1000.0
         if dt > 0.1: dt = 0.1
+        mouse_pos = pygame.mouse.get_pos()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if game_state == "menu" and play_btn.is_hovered:
+                    game_state = "playing"
+                    score, elapsed, spawn_timer = 0, 0.0, 0.0
+                    obstacles.clear()
+                    player_vx = 0
+                elif game_state == "gameover" and restart_btn.is_hovered:
+                    game_state = "playing"
+                    score, elapsed, spawn_timer = 0, 0.0, 0.0
+                    obstacles.clear()
+                    player_vx = 0
             if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    # Fix: Return to menu instead of quitting/freezing
+                    game_state = "menu"
+                    obstacles.clear()
                 if game_state == "menu" and event.key in (pygame.K_SPACE, pygame.K_RETURN):
                     game_state = "playing"
                     score, elapsed, spawn_timer = 0, 0.0, 0.0
                     obstacles.clear()
                     player_vx = 0
-                elif game_state == "gameover" and event.key in (pygame.K_r, pygame.K_RETURN):
-                    game_state = "playing"
-                    score, elapsed, spawn_timer = 0, 0.0, 0.0
-                    obstacles.clear()
-                    player_vx = 0
-                elif event.key == pygame.K_ESCAPE:
-                    running = False
 
         # Gameplay Logic
         if game_state == "playing":
@@ -213,32 +263,21 @@ async def game_loop():
             if keys[pygame.K_LEFT] or keys[pygame.K_a]: move_input -= 1
             if keys[pygame.K_RIGHT] or keys[pygame.K_d]: move_input += 1
 
-            # Smooth Physics
-            if move_input != 0:
-                player_vx += move_input * ACCELERATION * dt
-                tilt += (-move_input * MAX_TILT - tilt) * 0.1
-            else:
-                player_vx *= FRICTION
-                tilt *= FRICTION
-
+            player_vx += move_input * ACCELERATION * dt
+            tilt += (-move_input * MAX_TILT - tilt) * 0.1
+            if move_input == 0: player_vx *= FRICTION
+            
             player_vx = max(-PLAYER_SPEED, min(PLAYER_SPEED, player_vx))
             player_rect.x += int(player_vx * dt)
             
-            # Bounds
-            if player_rect.left < 10:
-                player_rect.left = 10
-                player_vx = 0
-            if player_rect.right > WIDTH - 10:
-                player_rect.right = WIDTH - 10
-                player_vx = 0
+            if player_rect.left < 10: player_rect.left = 10; player_vx = 0
+            if player_rect.right > WIDTH - 10: player_rect.right = WIDTH - 10; player_vx = 0
 
-            # Thruster Particles
             if random.random() < 0.5:
                 ps.emit(player_rect.centerx + random.randint(-10, 10), player_rect.bottom - 10, 
                         random.uniform(-20, 20), random.uniform(100, 200), 
                         0.4, (100, 200, 255), random.randint(2, 4))
 
-            # Spawning
             spawn_timer += dt
             if spawn_timer >= phase["spawn_interval"]:
                 spawn_timer = 0.0
@@ -251,17 +290,19 @@ async def game_loop():
                 if not obs.passed and obs.rect.top > player_rect.bottom:
                     obs.passed = True
                     score += 1
+                    if score > high_score:
+                        high_score = score
+                        save_high_score(high_score)
 
             obstacles = [obs for obs in obstacles if obs.rect.top <= HEIGHT + 50]
 
-            # Collision
             if any(player_rect.colliderect(obs.rect) for obs in obstacles):
                 game_state = "gameover"
-                shake_amount = 20
-                for _ in range(30):
+                shake_amount = 25
+                for _ in range(40):
                     ps.emit(player_rect.centerx, player_rect.centery, 
-                            random.uniform(-300, 300), random.uniform(-300, 300), 
-                            0.8, (255, 150, 50), random.randint(4, 8))
+                            random.uniform(-400, 400), random.uniform(-400, 400), 
+                            1.0, (255, 150, 50), random.randint(4, 10))
 
         # Rendering
         ps.update(dt)
@@ -277,9 +318,11 @@ async def game_loop():
         ps.draw(screen)
 
         if game_state == "menu":
-            draw_text_center(screen, "GALGA LITE", title_font, WHITE, WIDTH // 2, 250)
-            draw_text_center(screen, "NEO EDITION", small_font, ACCENT, WIDTH // 2, 310)
-            draw_text_center(screen, "Press SPACE to Begin", ui_font, WHITE, WIDTH // 2, 450)
+            play_btn.update(mouse_pos)
+            draw_text_center(screen, "GALGA LITE", title_font, WHITE, WIDTH // 2, 220)
+            draw_text_center(screen, "NEO EDITION", ui_font, ACCENT, WIDTH // 2, 300)
+            draw_text_center(screen, f"BEST: {high_score}", small_font, (200, 220, 255), WIDTH // 2, 350)
+            play_btn.draw(screen)
         else:
             if game_state == "playing":
                 if ship_img:
@@ -296,12 +339,14 @@ async def game_loop():
             draw_text_center(screen, f"{phase_name}", small_font, ACCENT, WIDTH // 2, 70)
 
             if game_state == "gameover":
+                restart_btn.update(mouse_pos)
                 overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
                 overlay.fill((0, 0, 0, 180))
                 screen.blit(overlay, (0, 0))
-                draw_text_center(screen, "SYSTEM FAILURE", title_font, (255, 80, 80), WIDTH // 2, 300)
-                draw_text_center(screen, f"FINAL SCORE: {score}", ui_font, WHITE, WIDTH // 2, 380)
-                draw_text_center(screen, "Press R to Reboot", small_font, ACCENT, WIDTH // 2, 440)
+                draw_text_center(screen, "SYSTEM FAILURE", title_font, (255, 80, 80), WIDTH // 2, 280)
+                draw_text_center(screen, f"SCORE: {score}", ui_font, WHITE, WIDTH // 2, 360)
+                draw_text_center(screen, f"BEST: {high_score}", small_font, ACCENT, WIDTH // 2, 410)
+                restart_btn.draw(screen)
 
         pygame.display.flip()
         await asyncio.sleep(0)
@@ -314,6 +359,7 @@ if __name__ == "__main__":
         loop.create_task(game_loop())
     except RuntimeError:
         asyncio.run(game_loop())
+
 
 
 
