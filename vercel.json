@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/", "destination": "/web-dist/index.html" },
+    { "source": "/(.*)", "destination": "/web-dist/$1" }
+  ]
+}

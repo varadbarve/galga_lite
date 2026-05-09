@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Build outputs
+build/
+web-dist/
+
+# Virtual env
+.venv/
+venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+.vercel
