@@ -4,7 +4,6 @@ __pycache__/
 
 # Build outputs
 build/
-web-dist/
 
 # Virtual env
 .venv/
