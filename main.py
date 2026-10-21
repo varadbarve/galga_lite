@@ -139,6 +139,88 @@ class Obstacle:
         else:
             pygame.draw.rect(surface, (255, 116, 116), self.rect, border_radius=10)
 
+# ---------- Procedural sprites (drawn in code: transparent, smooth, no image files) ----------
+SS = 4  # supersampling factor: draw big, scale down => smooth anti-aliased edges
+
+
+def _poly(surf, color, pts, s=SS):
+    pygame.draw.polygon(surf, color, [(x * s, y * s) for x, y in pts])
+
+
+def make_ship_sprite(size=64):
+    """Sleek fighter drawn with vector shapes on a transparent surface."""
+    big = pygame.Surface((size * SS, size * SS), pygame.SRCALPHA)
+    k = size / 64.0
+
+    def P(pts):
+        return [(x * k, y * k) for x, y in pts]
+
+    # engine glow
+    pygame.draw.ellipse(big, (80, 200, 255, 90), (22 * k * SS, 46 * k * SS, 20 * k * SS, 16 * k * SS))
+    # wings (back layer)
+    wing_l = [(30, 28), (4, 50), (6, 58), (16, 56), (30, 48)]
+    wing_r = [(64 - x, y) for x, y in wing_l]
+    _poly(big, (28, 84, 150), P(wing_l), SS)
+    _poly(big, (28, 84, 150), P(wing_r), SS)
+    # wing highlights
+    _poly(big, (60, 150, 225), P([(30, 28), (10, 48), (16, 50), (30, 40)]), SS)
+    _poly(big, (60, 150, 225), P([(34, 28), (54, 48), (48, 50), (34, 40)]), SS)
+    # wingtip lights
+    pygame.draw.circle(big, (255, 110, 90), (int(6 * k * SS), int(55 * k * SS)), int(2.2 * k * SS))
+    pygame.draw.circle(big, (255, 110, 90), (int(58 * k * SS), int(55 * k * SS)), int(2.2 * k * SS))
+    # fuselage
+    _poly(big, (200, 225, 245), P([(32, 2), (39, 20), (41, 46), (37, 58), (27, 58), (23, 46), (25, 20)]), SS)
+    # fuselage shading (right half darker)
+    _poly(big, (140, 175, 210), P([(32, 2), (39, 20), (41, 46), (37, 58), (32, 58)]), SS)
+    # tail fins
+    _poly(big, (28, 84, 150), P([(26, 48), (20, 60), (27, 58)]), SS)
+    _poly(big, (28, 84, 150), P([(38, 48), (44, 60), (37, 58)]), SS)
+    # cockpit
+    pygame.draw.ellipse(big, (20, 50, 100), (28 * k * SS, 14 * k * SS, 8 * k * SS, 16 * k * SS))
+    pygame.draw.ellipse(big, (110, 220, 255), (29.5 * k * SS, 15.5 * k * SS, 4.5 * k * SS, 10 * k * SS))
+    # engines
+    pygame.draw.rect(big, (255, 190, 90), (27.5 * k * SS, 56 * k * SS, 3 * k * SS, 3.5 * k * SS))
+    pygame.draw.rect(big, (255, 190, 90), (33.5 * k * SS, 56 * k * SS, 3 * k * SS, 3.5 * k * SS))
+    return pygame.transform.smoothscale(big, (size, size))
+
+
+def make_meteor_sprite(size=52, seed=0):
+    """Rocky, glowing meteor with craters on a transparent surface."""
+    rng = random.Random(seed)
+    big = pygame.Surface((size * SS, size * SS), pygame.SRCALPHA)
+    c = size * SS / 2
+    r0 = size * SS * 0.40
+    n = 16
+    pts = []
+    for i in range(n):
+        a = 2 * math.pi * i / n
+        r = r0 * rng.uniform(0.82, 1.12)
+        pts.append((c + r * math.cos(a), c + r * math.sin(a)))
+    # hot glow behind
+    pygame.draw.circle(big, (255, 120, 40, 38), (int(c), int(c)), int(r0 * 1.15))
+    pygame.draw.polygon(big, (255, 140, 60), pts)                       # molten rim
+    inner = [(c + (x - c) * 0.93, c + (y - c) * 0.93) for x, y in pts]
+    pygame.draw.polygon(big, (92, 76, 70), inner)                       # rock body
+    light = [(c + (x - c) * 0.80 - r0 * 0.10, c + (y - c) * 0.80 - r0 * 0.12) for x, y in pts]
+    pygame.draw.polygon(big, (128, 108, 98), light)                     # lit side
+    # craters
+    for _ in range(4):
+        a = rng.uniform(0, 2 * math.pi)
+        d = rng.uniform(0, r0 * 0.55)
+        cx, cy = c + d * math.cos(a), c + d * math.sin(a)
+        cr = rng.uniform(r0 * 0.12, r0 * 0.24)
+        pygame.draw.circle(big, (58, 46, 44), (int(cx), int(cy)), int(cr))
+        pygame.draw.circle(big, (150, 128, 116), (int(cx - cr * 0.15), int(cy - cr * 0.15)), int(cr * 0.8), max(1, int(cr * 0.12)))
+        pygame.draw.circle(big, (70, 56, 52), (int(cx + cr * 0.1), int(cy + cr * 0.1)), int(cr * 0.7))
+    # glowing cracks
+    for _ in range(3):
+        a = rng.uniform(0, 2 * math.pi)
+        x1, y1 = c + r0 * 0.2 * math.cos(a), c + r0 * 0.2 * math.sin(a)
+        x2, y2 = c + r0 * 0.85 * math.cos(a + 0.3), c + r0 * 0.85 * math.sin(a + 0.3)
+        pygame.draw.line(big, (255, 150, 60), (x1, y1), (x2, y2), max(2, SS))
+    return pygame.transform.smoothscale(big, (size, size))
+
+
 def get_phase(elapsed_seconds):
     current = PHASES[0]
     for phase in PHASES:
@@ -199,18 +281,9 @@ async def game_loop():
     ui_font = pygame.font.SysFont("arial", 36, bold=True)
     small_font = pygame.font.SysFont("arial", 24)
 
-    # Assets
-    try:
-        ship_img = pygame.image.load("assets/ship.png").convert()
-        ship_img.set_colorkey((255, 255, 255)) # Remove white background
-        ship_img = pygame.transform.scale(ship_img, (64, 64))
-        
-        meteor_img = pygame.image.load("assets/meteor.png").convert()
-        meteor_img.set_colorkey((255, 255, 255)) # Remove white background
-        meteor_img = pygame.transform.scale(meteor_img, (OBSTACLE_WIDTH, OBSTACLE_HEIGHT))
-    except:
-        ship_img = None
-        meteor_img = None
+    # Sprites (generated in code at startup)
+    ship_img = make_ship_sprite(64)
+    meteor_imgs = [make_meteor_sprite(OBSTACLE_WIDTH, seed=i) for i in range(4)]
 
     clock = pygame.time.Clock()
     bg_surface = create_gradient_surface()
@@ -310,7 +383,7 @@ async def game_loop():
                 spawn_timer = 0.0
                 ox = random.randint(20, WIDTH - OBSTACLE_WIDTH - 20)
                 ospeed = random.randint(phase["speed_min"], phase["speed_max"])
-                obstacles.append(Obstacle(ox, ospeed, meteor_img))
+                obstacles.append(Obstacle(ox, ospeed, random.choice(meteor_imgs)))
 
             for obs in obstacles:
                 obs.update(dt)
@@ -322,7 +395,8 @@ async def game_loop():
 
             obstacles = [obs for obs in obstacles if obs.rect.top <= HEIGHT + 50]
 
-            if any(player_rect.colliderect(obs.rect) for obs in obstacles):
+            player_hit = player_rect.inflate(-26, -12)
+            if any(player_hit.colliderect(obs.rect.inflate(-14, -14)) for obs in obstacles):
                 game_state = "gameover"
                 shake_amount = 25.0
                 if high_score > saved_high:
