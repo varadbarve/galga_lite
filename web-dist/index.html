@@ -434,5 +434,34 @@ frameborder="1"
 
     </script>
 
+
+<style>
+html, body { margin: 0 !important; height: 100% !important; overflow: hidden !important;
+  background: #02061a !important; touch-action: none; overscroll-behavior: none; }
+</style>
+<script>
+(function () {
+  var W = 540, H = 820;
+  function fit() {
+    var c = document.getElementById("canvas");
+    if (!c) return;
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var s = Math.min(vw / W, vh / H);
+    var w = Math.floor(W * s), h = Math.floor(H * s);
+    var st = c.style;
+    st.setProperty("position", "fixed", "important");
+    st.setProperty("width", w + "px", "important");
+    st.setProperty("height", h + "px", "important");
+    st.setProperty("left", Math.floor((vw - w) / 2) + "px", "important");
+    st.setProperty("top", Math.floor((vh - h) / 2) + "px", "important");
+    st.setProperty("right", "auto", "important");
+    st.setProperty("bottom", "auto", "important");
+    st.setProperty("margin", "0", "important");
+  }
+  window.addEventListener("resize", fit);
+  window.addEventListener("orientationchange", fit);
+  setInterval(fit, 300);
+})();
+</script>
 </body>
 </html>
