@@ -1,43 +1,64 @@
 import asyncio
-import random
-import sys
-import math
-import pygame
 import json
 import os
+import random
+import sys
 
-# Constants
+import pygame
+
+# ---------------------------------------------------------------------------
+# Galga Lite - 8-bit edition
+# The game is simulated at 540x820 but drawn on a tiny 135x205 canvas that is
+# scaled up 4x (nearest-neighbour), which gives the chunky retro look and keeps
+# drawing cheap in the browser.
+# ---------------------------------------------------------------------------
+
 WIDTH = 540
 HEIGHT = 820
 FPS = 60
+SCALE = 4
+LW, LH = WIDTH // SCALE, HEIGHT // SCALE  # 135 x 205 logical pixels
 
-# Physics
+# Physics (pixels / second)
 PLAYER_SPEED = 450
 ACCELERATION = 2800
-FRICTION = 0.92
-MAX_TILT = 15
+FRICTION = 0.92  # tuned per frame at 60 FPS, applied frame-rate independently
 
-# Visuals
 OBSTACLE_WIDTH = 52
 OBSTACLE_HEIGHT = 52
-BG_TOP = (8, 15, 35)
-BG_BOTTOM = (2, 6, 18)
-WHITE = (255, 255, 255) # Pure white for colorkey
-SHIP_COLOR = (90, 230, 255)
-ACCENT = (255, 198, 111)
+
+# Limited retro palette
+BG = (8, 8, 26)
+WHITE = (255, 255, 255)
+YELLOW = (255, 220, 80)
+RED = (255, 70, 70)
+GREEN = (60, 220, 130)
+BLUE = (60, 150, 255)
+GREY = (150, 155, 190)
+
+PAL = {
+    "W": (255, 255, 255),
+    "C": (90, 235, 255),
+    "B": (50, 120, 240),
+    "D": (22, 52, 150),
+    "R": (255, 70, 70),
+    "Y": (255, 220, 80),
+    "O": (255, 140, 40),
+}
 
 PHASES = [
-    {"name": "Phase 1", "start": 0, "spawn_interval": 0.95, "speed_min": 140, "speed_max": 200},
-    {"name": "Phase 2", "start": 20, "spawn_interval": 0.72, "speed_min": 190, "speed_max": 270},
-    {"name": "Phase 3", "start": 40, "spawn_interval": 0.55, "speed_min": 250, "speed_max": 350},
-    {"name": "Phase 4", "start": 65, "spawn_interval": 0.40, "speed_min": 320, "speed_max": 420},
+    {"name": "PHASE 1", "start": 0, "spawn_interval": 0.95, "speed_min": 140, "speed_max": 200},
+    {"name": "PHASE 2", "start": 20, "spawn_interval": 0.72, "speed_min": 190, "speed_max": 270},
+    {"name": "PHASE 3", "start": 40, "spawn_interval": 0.55, "speed_min": 250, "speed_max": 350},
+    {"name": "PHASE 4", "start": 65, "spawn_interval": 0.40, "speed_min": 320, "speed_max": 420},
 ]
 
-# High Score Utility
-# On the web (Pygbag/emscripten) files live in a temporary in-memory filesystem
-# that is wiped on reload, so persist to the browser's localStorage instead.
+# ---------------------------------------------------------------------------
+# High score: browser localStorage on the web, a file on desktop
+# ---------------------------------------------------------------------------
 IS_WEB = sys.platform == "emscripten"
 HS_KEY = "galga_lite_highscore"
+
 
 def load_high_score():
     try:
@@ -51,6 +72,7 @@ def load_high_score():
         pass
     return 0
 
+
 def save_high_score(score):
     try:
         if IS_WEB:
@@ -62,6 +84,165 @@ def save_high_score(score):
     except Exception:
         pass
 
+
+# ---------------------------------------------------------------------------
+# 5x7 pixel font
+# ---------------------------------------------------------------------------
+_F = {
+    "A": "01110 10001 10001 11111 10001 10001 10001",
+    "B": "11110 10001 10001 11110 10001 10001 11110",
+    "C": "01110 10001 10000 10000 10000 10001 01110",
+    "D": "11100 10010 10001 10001 10001 10010 11100",
+    "E": "11111 10000 10000 11110 10000 10000 11111",
+    "F": "11111 10000 10000 11110 10000 10000 10000",
+    "G": "01110 10001 10000 10111 10001 10001 01111",
+    "H": "10001 10001 10001 11111 10001 10001 10001",
+    "I": "01110 00100 00100 00100 00100 00100 01110",
+    "J": "00111 00010 00010 00010 00010 10010 01100",
+    "K": "10001 10010 10100 11000 10100 10010 10001",
+    "L": "10000 10000 10000 10000 10000 10000 11111",
+    "M": "10001 11011 10101 10101 10001 10001 10001",
+    "N": "10001 11001 10101 10011 10001 10001 10001",
+    "O": "01110 10001 10001 10001 10001 10001 01110",
+    "P": "11110 10001 10001 11110 10000 10000 10000",
+    "Q": "01110 10001 10001 10001 10101 10010 01101",
+    "R": "11110 10001 10001 11110 10100 10010 10001",
+    "S": "01111 10000 10000 01110 00001 00001 11110",
+    "T": "11111 00100 00100 00100 00100 00100 00100",
+    "U": "10001 10001 10001 10001 10001 10001 01110",
+    "V": "10001 10001 10001 10001 10001 01010 00100",
+    "W": "10001 10001 10001 10101 10101 10101 01010",
+    "X": "10001 10001 01010 00100 01010 10001 10001",
+    "Y": "10001 10001 01010 00100 00100 00100 00100",
+    "Z": "11111 00001 00010 00100 01000 10000 11111",
+    "0": "01110 10001 10011 10101 11001 10001 01110",
+    "1": "00100 01100 00100 00100 00100 00100 01110",
+    "2": "01110 10001 00001 00010 00100 01000 11111",
+    "3": "11110 00001 00001 01110 00001 00001 11110",
+    "4": "00010 00110 01010 10010 11111 00010 00010",
+    "5": "11111 10000 11110 00001 00001 10001 01110",
+    "6": "00110 01000 10000 11110 10001 10001 01110",
+    "7": "11111 00001 00010 00100 01000 01000 01000",
+    "8": "01110 10001 10001 01110 10001 10001 01110",
+    "9": "01110 10001 10001 01111 00001 00010 01100",
+    ":": "00000 00100 00100 00000 00100 00100 00000",
+    "-": "00000 00000 00000 11111 00000 00000 00000",
+    "!": "00100 00100 00100 00100 00100 00000 00100",
+    ".": "00000 00000 00000 00000 00000 01100 01100",
+    " ": "00000 00000 00000 00000 00000 00000 00000",
+}
+FONT = {ch: rows.split() for ch, rows in _F.items()}
+_text_cache = {}
+
+
+def text_surface(text, color, scale=1):
+    """Pre-rendered (and cached) pixel text with a 1px drop shadow."""
+    key = (text, color, scale)
+    surf = _text_cache.get(key)
+    if surf is not None:
+        return surf
+    off = max(1, scale // 2)
+    w = (len(text) * 6 - 1) * scale + off
+    h = 7 * scale + off
+    surf = pygame.Surface((w, h), pygame.SRCALPHA)
+    for i, ch in enumerate(text):
+        rows = FONT.get(ch.upper(), FONT[" "])
+        for ry, row in enumerate(rows):
+            for rx, bit in enumerate(row):
+                if bit == "1":
+                    x = (i * 6 + rx) * scale
+                    y = ry * scale
+                    surf.fill((0, 0, 0), (x + off, y + off, scale, scale))
+    for i, ch in enumerate(text):
+        rows = FONT.get(ch.upper(), FONT[" "])
+        for ry, row in enumerate(rows):
+            for rx, bit in enumerate(row):
+                if bit == "1":
+                    surf.fill(color, ((i * 6 + rx) * scale, ry * scale, scale, scale))
+    if len(_text_cache) > 300:
+        _text_cache.clear()
+    _text_cache[key] = surf
+    return surf
+
+
+def draw_text_center(surface, text, color, cx, y, scale=1):
+    s = text_surface(text, color, scale)
+    surface.blit(s, (cx - s.get_width() // 2, y))
+
+
+# ---------------------------------------------------------------------------
+# Pixel-art sprites (built once at startup)
+# ---------------------------------------------------------------------------
+SHIP_ART = [
+    ".......W.......",
+    "......WCW......",
+    "......WCW......",
+    ".....WWCWW.....",
+    ".....WBCBW.....",
+    "....WBBBBBW....",
+    "..W.WBBDBBW.W..",
+    "..BWBBBDBBBWB..",
+    ".BBBBBBDBBBBBB.",
+    ".BBDBBBDBBBDBB.",
+    "BBDDBBBDBBBDDBB",
+    "BRDD.BBDBB.DDRB",
+    "B.D..BDDDB..D.B",
+    ".....DD.DD.....",
+    ".....O...O.....",
+]
+
+
+def make_ship_sprite():
+    h, w = len(SHIP_ART), len(SHIP_ART[0])
+    surf = pygame.Surface((w, h), pygame.SRCALPHA)
+    for y, row in enumerate(SHIP_ART):
+        assert len(row) == w, "ship row width"
+        for x, ch in enumerate(row):
+            if ch in PAL:
+                surf.set_at((x, y), PAL[ch])
+    return surf
+
+
+def make_meteor_sprite(seed, size=13):
+    rng = random.Random(seed)
+    surf = pygame.Surface((size, size), pygame.SRCALPHA)
+    c = (size - 1) / 2.0
+    radii = [rng.uniform(4.6, 6.3) for _ in range(16)]
+    inside = set()
+    for y in range(size):
+        for x in range(size):
+            dx, dy = x - c, y - c
+            ang = int(((__import__("math").atan2(dy, dx) + 3.14159) / 6.28319) * 16) % 16
+            if (dx * dx + dy * dy) ** 0.5 <= radii[ang]:
+                inside.add((x, y))
+    for (x, y) in inside:
+        edge = any((x + ax, y + ay) not in inside for ax, ay in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+        if edge:
+            col = (60, 44, 40)
+        else:
+            light = ((x - c) + (y - c)) / (2.0 * c)
+            if light < -0.25:
+                col = (178, 150, 120)
+            elif light < 0.25:
+                col = (134, 108, 90)
+            else:
+                col = (96, 76, 66)
+        surf.set_at((x, y), col)
+    for _ in range(3):  # craters
+        cx, cy = rng.randint(3, size - 5), rng.randint(3, size - 5)
+        for px, py in ((cx, cy), (cx + 1, cy), (cx, cy + 1)):
+            if (px, py) in inside:
+                surf.set_at((px, py), (70, 52, 46))
+    for _ in range(2):  # hot embers
+        px, py = rng.randint(3, size - 4), rng.randint(3, size - 4)
+        if (px, py) in inside:
+            surf.set_at((px, py), (255, 140, 40))
+    return surf
+
+
+# ---------------------------------------------------------------------------
+# Game objects
+# ---------------------------------------------------------------------------
 class Particle:
     def __init__(self, x, y, vx, vy, life, color, size):
         self.x, self.y = x, y
@@ -78,10 +259,13 @@ class Particle:
         return self.life > 0
 
     def draw(self, surface):
-        alpha = int((self.life / self.max_life) * 255)
-        s = pygame.Surface((self.size * 2, self.size * 2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (*self.color, alpha), (self.size, self.size), self.size)
-        surface.blit(s, (int(self.x - self.size), int(self.y - self.size)))
+        k = max(0.0, self.life / self.max_life)
+        c = (int(self.color[0] * k + BG[0] * (1 - k)),
+             int(self.color[1] * k + BG[1] * (1 - k)),
+             int(self.color[2] * k + BG[2] * (1 - k)))
+        s = 2 if self.size >= 7 else 1
+        surface.fill(c, (int(self.x) // SCALE, int(self.y) // SCALE, s, s))
+
 
 class ParticleSystem:
     def __init__(self):
@@ -97,7 +281,10 @@ class ParticleSystem:
         for p in self.particles:
             p.draw(surface)
 
+
 class Star:
+    COLORS = [(110, 110, 160), (200, 200, 255), (255, 255, 255), (255, 230, 130)]
+
     def __init__(self):
         self.reset(True)
 
@@ -105,8 +292,8 @@ class Star:
         self.x = random.randint(0, WIDTH)
         self.y = random.randint(0, HEIGHT) if random_y else -10
         self.speed = random.uniform(50, 200)
-        self.size = random.uniform(1, 3)
-        self.color = random.choice([(200, 200, 255), (255, 255, 255), (255, 255, 200)])
+        self.big = self.speed > 150
+        self.color = random.choice(Star.COLORS)
 
     def update(self, dt):
         self.y += self.speed * dt
@@ -114,111 +301,45 @@ class Star:
             self.reset()
 
     def draw(self, surface):
-        pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), int(self.size))
+        s = 2 if self.big else 1
+        surface.fill(self.color, (int(self.x) // SCALE, int(self.y) // SCALE, s, s))
+
 
 class Obstacle:
-    def __init__(self, x, speed, image=None):
+    def __init__(self, x, speed, image):
         self.rect = pygame.Rect(x, -OBSTACLE_HEIGHT, OBSTACLE_WIDTH, OBSTACLE_HEIGHT)
-        self.y = float(-OBSTACLE_HEIGHT)  # float position keeps sub-pixel motion
+        self.y = float(-OBSTACLE_HEIGHT)
         self.speed = speed
         self.passed = False
         self.image = image
-        self.angle = 0
-        self.rotation_speed = random.uniform(-100, 100)
 
     def update(self, dt):
         self.y += self.speed * dt
         self.rect.y = int(self.y)
-        self.angle += self.rotation_speed * dt
 
     def draw(self, surface):
-        if self.image:
-            rotated = pygame.transform.rotate(self.image, self.angle)
-            rect = rotated.get_rect(center=self.rect.center)
-            surface.blit(rotated, rect)
-        else:
-            pygame.draw.rect(surface, (255, 116, 116), self.rect, border_radius=10)
-
-# ---------- Procedural sprites (drawn in code: transparent, smooth, no image files) ----------
-SS = 4  # supersampling factor: draw big, scale down => smooth anti-aliased edges
+        surface.blit(self.image, (self.rect.x // SCALE, self.rect.y // SCALE))
 
 
-def _poly(surf, color, pts, s=SS):
-    pygame.draw.polygon(surf, color, [(x * s, y * s) for x, y in pts])
+class Button:
+    def __init__(self, text, x, y, w, h, color, shade):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.text = text
+        self.color = color
+        self.shade = shade
+        self.is_hovered = False
 
+    def update(self, mouse_pos):
+        self.is_hovered = self.rect.collidepoint(mouse_pos)
 
-def make_ship_sprite(size=64):
-    """Sleek fighter drawn with vector shapes on a transparent surface."""
-    big = pygame.Surface((size * SS, size * SS), pygame.SRCALPHA)
-    k = size / 64.0
-
-    def P(pts):
-        return [(x * k, y * k) for x, y in pts]
-
-    # engine glow
-    pygame.draw.ellipse(big, (80, 200, 255, 90), (22 * k * SS, 46 * k * SS, 20 * k * SS, 16 * k * SS))
-    # wings (back layer)
-    wing_l = [(30, 28), (4, 50), (6, 58), (16, 56), (30, 48)]
-    wing_r = [(64 - x, y) for x, y in wing_l]
-    _poly(big, (28, 84, 150), P(wing_l), SS)
-    _poly(big, (28, 84, 150), P(wing_r), SS)
-    # wing highlights
-    _poly(big, (60, 150, 225), P([(30, 28), (10, 48), (16, 50), (30, 40)]), SS)
-    _poly(big, (60, 150, 225), P([(34, 28), (54, 48), (48, 50), (34, 40)]), SS)
-    # wingtip lights
-    pygame.draw.circle(big, (255, 110, 90), (int(6 * k * SS), int(55 * k * SS)), int(2.2 * k * SS))
-    pygame.draw.circle(big, (255, 110, 90), (int(58 * k * SS), int(55 * k * SS)), int(2.2 * k * SS))
-    # fuselage
-    _poly(big, (200, 225, 245), P([(32, 2), (39, 20), (41, 46), (37, 58), (27, 58), (23, 46), (25, 20)]), SS)
-    # fuselage shading (right half darker)
-    _poly(big, (140, 175, 210), P([(32, 2), (39, 20), (41, 46), (37, 58), (32, 58)]), SS)
-    # tail fins
-    _poly(big, (28, 84, 150), P([(26, 48), (20, 60), (27, 58)]), SS)
-    _poly(big, (28, 84, 150), P([(38, 48), (44, 60), (37, 58)]), SS)
-    # cockpit
-    pygame.draw.ellipse(big, (20, 50, 100), (28 * k * SS, 14 * k * SS, 8 * k * SS, 16 * k * SS))
-    pygame.draw.ellipse(big, (110, 220, 255), (29.5 * k * SS, 15.5 * k * SS, 4.5 * k * SS, 10 * k * SS))
-    # engines
-    pygame.draw.rect(big, (255, 190, 90), (27.5 * k * SS, 56 * k * SS, 3 * k * SS, 3.5 * k * SS))
-    pygame.draw.rect(big, (255, 190, 90), (33.5 * k * SS, 56 * k * SS, 3 * k * SS, 3.5 * k * SS))
-    return pygame.transform.smoothscale(big, (size, size))
-
-
-def make_meteor_sprite(size=52, seed=0):
-    """Rocky, glowing meteor with craters on a transparent surface."""
-    rng = random.Random(seed)
-    big = pygame.Surface((size * SS, size * SS), pygame.SRCALPHA)
-    c = size * SS / 2
-    r0 = size * SS * 0.40
-    n = 16
-    pts = []
-    for i in range(n):
-        a = 2 * math.pi * i / n
-        r = r0 * rng.uniform(0.82, 1.12)
-        pts.append((c + r * math.cos(a), c + r * math.sin(a)))
-    # hot glow behind
-    pygame.draw.circle(big, (255, 120, 40, 38), (int(c), int(c)), int(r0 * 1.15))
-    pygame.draw.polygon(big, (255, 140, 60), pts)                       # molten rim
-    inner = [(c + (x - c) * 0.93, c + (y - c) * 0.93) for x, y in pts]
-    pygame.draw.polygon(big, (92, 76, 70), inner)                       # rock body
-    light = [(c + (x - c) * 0.80 - r0 * 0.10, c + (y - c) * 0.80 - r0 * 0.12) for x, y in pts]
-    pygame.draw.polygon(big, (128, 108, 98), light)                     # lit side
-    # craters
-    for _ in range(4):
-        a = rng.uniform(0, 2 * math.pi)
-        d = rng.uniform(0, r0 * 0.55)
-        cx, cy = c + d * math.cos(a), c + d * math.sin(a)
-        cr = rng.uniform(r0 * 0.12, r0 * 0.24)
-        pygame.draw.circle(big, (58, 46, 44), (int(cx), int(cy)), int(cr))
-        pygame.draw.circle(big, (150, 128, 116), (int(cx - cr * 0.15), int(cy - cr * 0.15)), int(cr * 0.8), max(1, int(cr * 0.12)))
-        pygame.draw.circle(big, (70, 56, 52), (int(cx + cr * 0.1), int(cy + cr * 0.1)), int(cr * 0.7))
-    # glowing cracks
-    for _ in range(3):
-        a = rng.uniform(0, 2 * math.pi)
-        x1, y1 = c + r0 * 0.2 * math.cos(a), c + r0 * 0.2 * math.sin(a)
-        x2, y2 = c + r0 * 0.85 * math.cos(a + 0.3), c + r0 * 0.85 * math.sin(a + 0.3)
-        pygame.draw.line(big, (255, 150, 60), (x1, y1), (x2, y2), max(2, SS))
-    return pygame.transform.smoothscale(big, (size, size))
+    def draw(self, surface):
+        x, y = self.rect.x // SCALE, self.rect.y // SCALE
+        w, h = self.rect.w // SCALE, self.rect.h // SCALE
+        face = tuple(min(255, c + 40) for c in self.color) if self.is_hovered else self.color
+        surface.fill(WHITE, (x, y, w, h))
+        surface.fill(face, (x + 1, y + 1, w - 2, h - 2))
+        surface.fill(self.shade, (x + 1, y + h - 3, w - 2, 2))
+        draw_text_center(surface, self.text, WHITE, x + w // 2, y + (h - 14) // 2 - 1, 2)
 
 
 def get_phase(elapsed_seconds):
@@ -230,77 +351,35 @@ def get_phase(elapsed_seconds):
             break
     return current
 
-def create_gradient_surface():
-    surface = pygame.Surface((WIDTH, HEIGHT))
-    for y in range(HEIGHT):
-        ratio = y / HEIGHT
-        color = (
-            int(BG_TOP[0] * (1 - ratio) + BG_BOTTOM[0] * ratio),
-            int(BG_TOP[1] * (1 - ratio) + BG_BOTTOM[1] * ratio),
-            int(BG_TOP[2] * (1 - ratio) + BG_BOTTOM[2] * ratio),
-        )
-        pygame.draw.line(surface, color, (0, y), (WIDTH, y))
-    return surface
 
-def draw_text_center(surface, text, font, color, center_x, y, shadow=True):
-    if shadow:
-        s_img = font.render(text, True, (0, 0, 0))
-        s_rect = s_img.get_rect(midtop=(center_x + 2, y + 2))
-        surface.blit(s_img, s_rect)
-    img = font.render(text, True, color)
-    rect = img.get_rect(midtop=(center_x, y))
-    surface.blit(img, rect)
-
-class Button:
-    def __init__(self, text, x, y, w, h, font, color, hover_color):
-        self.rect = pygame.Rect(x, y, w, h)
-        self.text = text
-        self.font = font
-        self.color = color
-        self.hover_color = hover_color
-        self.is_hovered = False
-
-    def update(self, mouse_pos):
-        self.is_hovered = self.rect.collidepoint(mouse_pos)
-
-    def draw(self, surface):
-        c = self.hover_color if self.is_hovered else self.color
-        pygame.draw.rect(surface, c, self.rect, border_radius=12)
-        pygame.draw.rect(surface, WHITE, self.rect, width=2, border_radius=12)
-        img = self.font.render(self.text, True, WHITE)
-        txt_rect = img.get_rect(center=self.rect.center)
-        surface.blit(img, txt_rect)
-
+# ---------------------------------------------------------------------------
+# Main loop
+# ---------------------------------------------------------------------------
 async def game_loop():
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Galga Lite - Neo")
+    pygame.display.set_caption("Galga Lite")
 
-    # Fonts
-    title_font = pygame.font.SysFont("arial", 72, bold=True)
-    ui_font = pygame.font.SysFont("arial", 36, bold=True)
-    small_font = pygame.font.SysFont("arial", 24)
+    low = pygame.Surface((LW, LH))          # the tiny retro canvas
+    scaled = pygame.Surface((WIDTH, HEIGHT))  # only used while the screen shakes
+    dim = pygame.Surface((LW, LH), pygame.SRCALPHA)
+    dim.fill((0, 0, 0, 165))
 
-    # Sprites (generated in code at startup)
-    ship_img = make_ship_sprite(64)
-    meteor_imgs = [make_meteor_sprite(OBSTACLE_WIDTH, seed=i) for i in range(4)]
+    ship_img = make_ship_sprite()
+    meteor_imgs = [make_meteor_sprite(i) for i in range(4)]
 
     clock = pygame.time.Clock()
-    bg_surface = create_gradient_surface()
     stars = [Star() for _ in range(60)]
     ps = ParticleSystem()
 
-    # Buttons
-    play_btn = Button("PLAY", WIDTH // 2 - 100, 420, 200, 60, ui_font, (50, 150, 255), (80, 180, 255))
-    restart_btn = Button("RESTART", WIDTH // 2 - 100, 480, 200, 60, ui_font, (50, 200, 150), (80, 230, 180))
+    play_btn = Button("PLAY", WIDTH // 2 - 140, 460, 280, 64, (40, 110, 230), (22, 60, 150))
+    retry_btn = Button("RETRY", WIDTH // 2 - 140, 580, 280, 64, (40, 170, 110), (22, 100, 70))
 
-    # Game State
     player_rect = pygame.Rect(WIDTH // 2 - 32, HEIGHT - 100, 64, 64)
-    player_x = float(player_rect.x)  # float position: sub-pixel, frame-rate independent
+    player_x = float(player_rect.x)
     player_vx = 0.0
-    tilt = 0.0
     shake_amount = 0.0
-    
+
     obstacles = []
     game_state = "menu"
     score = 0
@@ -313,23 +392,22 @@ async def game_loop():
     running = True
     while running:
         dt = clock.tick(FPS) / 1000.0
-        if dt > 0.1: dt = 0.1
+        if dt > 0.1:
+            dt = 0.1
         mouse_pos = pygame.mouse.get_pos()
 
         start_requested = False
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            # Use the event's own position (not a hover flag from the last frame)
-            # so a touch tap registers immediately on mobile.
+            # Use the event's own position so a touch tap registers immediately.
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if game_state == "menu" and play_btn.rect.collidepoint(event.pos):
                     start_requested = True
-                elif game_state == "gameover" and restart_btn.rect.collidepoint(event.pos):
+                elif game_state == "gameover" and retry_btn.rect.collidepoint(event.pos):
                     start_requested = True
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    # Return to menu instead of quitting/freezing
                     if high_score > saved_high:
                         save_high_score(high_score)
                         saved_high = high_score
@@ -337,7 +415,7 @@ async def game_loop():
                     obstacles.clear()
                 elif game_state == "menu" and event.key in (pygame.K_SPACE, pygame.K_RETURN):
                     start_requested = True
-                elif game_state == "gameover" and event.key in (pygame.K_r, pygame.K_RETURN):
+                elif game_state == "gameover" and event.key in (pygame.K_r, pygame.K_RETURN, pygame.K_SPACE):
                     start_requested = True
 
         if start_requested and game_state in ("menu", "gameover"):
@@ -347,7 +425,7 @@ async def game_loop():
             player_vx = 0.0
             player_x = float(player_rect.x)
 
-        # Gameplay Logic
+        # ---- gameplay ----
         if game_state == "playing":
             elapsed += dt
             phase = get_phase(elapsed)
@@ -355,28 +433,32 @@ async def game_loop():
 
             keys = pygame.key.get_pressed()
             move_input = 0
-            if keys[pygame.K_LEFT] or keys[pygame.K_a]: move_input -= 1
-            if keys[pygame.K_RIGHT] or keys[pygame.K_d]: move_input += 1
-            # Touch / mouse hold: left half of screen steers left, right half steers right
+            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                move_input -= 1
+            if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                move_input += 1
+            # Touch / mouse hold: left half steers left, right half steers right
             if move_input == 0 and pygame.mouse.get_pressed()[0]:
                 move_input = -1 if mouse_pos[0] < WIDTH / 2 else 1
 
             player_vx += move_input * ACCELERATION * dt
-            # Frame-rate independent smoothing: constants were tuned for 60 FPS
-            tilt += (-move_input * MAX_TILT - tilt) * (1 - 0.9 ** (dt * 60))
-            if move_input == 0: player_vx *= FRICTION ** (dt * 60)
-            
+            if move_input == 0:
+                player_vx *= FRICTION ** (dt * 60)
             player_vx = max(-PLAYER_SPEED, min(PLAYER_SPEED, player_vx))
+
             player_x += player_vx * dt
-            if player_x < 10: player_x = 10; player_vx = 0
+            if player_x < 10:
+                player_x = 10
+                player_vx = 0
             if player_x + player_rect.width > WIDTH - 10:
-                player_x = WIDTH - 10 - player_rect.width; player_vx = 0
+                player_x = WIDTH - 10 - player_rect.width
+                player_vx = 0
             player_rect.x = int(player_x)
 
-            if random.random() < 30 * dt:  # ~30 particles/sec regardless of FPS
-                ps.emit(player_rect.centerx + random.randint(-10, 10), player_rect.bottom - 10, 
-                        random.uniform(-20, 20), random.uniform(100, 200), 
-                        0.4, (100, 200, 255), random.randint(2, 4))
+            if random.random() < 30 * dt:  # engine exhaust
+                ps.emit(player_rect.centerx + random.randint(-8, 8), player_rect.bottom - 6,
+                        random.uniform(-20, 20), random.uniform(100, 200),
+                        0.35, (255, 170, 60), 3)
 
             spawn_timer += dt
             if spawn_timer >= phase["spawn_interval"]:
@@ -393,77 +475,76 @@ async def game_loop():
                     if score > high_score:
                         high_score = score
 
-            obstacles = [obs for obs in obstacles if obs.rect.top <= HEIGHT + 50]
+            obstacles = [o for o in obstacles if o.rect.top <= HEIGHT + 50]
 
-            player_hit = player_rect.inflate(-26, -12)
-            if any(player_hit.colliderect(obs.rect.inflate(-14, -14)) for obs in obstacles):
+            player_hit = player_rect.inflate(-24, -16)
+            if any(player_hit.colliderect(o.rect.inflate(-12, -12)) for o in obstacles):
                 game_state = "gameover"
-                shake_amount = 25.0
+                shake_amount = 24.0
                 if high_score > saved_high:
                     save_high_score(high_score)
                     saved_high = high_score
-                for _ in range(40):
-                    ps.emit(player_rect.centerx, player_rect.centery, 
-                            random.uniform(-400, 400), random.uniform(-400, 400), 
-                            1.0, (255, 150, 50), random.randint(4, 10))
+                for _ in range(36):
+                    ps.emit(player_rect.centerx, player_rect.centery,
+                            random.uniform(-380, 380), random.uniform(-380, 380),
+                            0.9, random.choice(((255, 150, 50), (255, 220, 80), (255, 90, 60))),
+                            random.randint(4, 9))
 
-        # Rendering
+        # ---- update effects ----
         ps.update(dt)
-        for star in stars: star.update(dt)
+        for star in stars:
+            star.update(dt)
 
-        render_offset = (0, 0)
-        if shake_amount > 0:
-            amt = int(shake_amount)
-            render_offset = (random.randint(-amt, amt), random.randint(-amt, amt))
-            shake_amount = max(0.0, shake_amount - 60 * dt)
+        # ---- draw (all on the tiny canvas) ----
+        low.fill(BG)
+        for star in stars:
+            star.draw(low)
+        ps.draw(low)
 
-        screen.blit(bg_surface, (0, 0))
-        for star in stars: star.draw(screen)
-        ps.draw(screen)
-
+        cx = LW // 2
         if game_state == "menu":
             play_btn.update(mouse_pos)
-            draw_text_center(screen, "GALGA LITE", title_font, WHITE, WIDTH // 2, 220)
-            draw_text_center(screen, "NEO EDITION", ui_font, ACCENT, WIDTH // 2, 300)
-            draw_text_center(screen, f"BEST: {high_score}", small_font, (200, 220, 255), WIDTH // 2, 350)
-            play_btn.draw(screen)
+            draw_text_center(low, "GALGA", YELLOW, cx, 26, 4)
+            draw_text_center(low, "LITE", (255, 140, 40), cx, 58, 4)
+            draw_text_center(low, "BEST: " + str(high_score), GREY, cx, 96)
+            play_btn.draw(low)
+            draw_text_center(low, "MOVE: ARROWS OR TOUCH", GREY, cx, 150)
+            draw_text_center(low, "DODGE THE ROCKS!", GREY, cx, 162)
         else:
-            if game_state == "playing":
-                if ship_img:
-                    rotated_ship = pygame.transform.rotate(ship_img, tilt)
-                    ship_draw_rect = rotated_ship.get_rect(center=player_rect.center)
-                    screen.blit(rotated_ship, (ship_draw_rect.x + render_offset[0], ship_draw_rect.y + render_offset[1]))
-                else:
-                    pygame.draw.polygon(screen, SHIP_COLOR, [(player_rect.centerx, player_rect.top), (player_rect.left, player_rect.bottom), (player_rect.right, player_rect.bottom)])
-
             for obs in obstacles:
-                obs.draw(screen)
-
-            draw_text_center(screen, f"SCORE: {score}", ui_font, WHITE, WIDTH // 2, 30)
-            draw_text_center(screen, f"{phase_name}", small_font, ACCENT, WIDTH // 2, 70)
-
+                obs.draw(low)
+            if game_state == "playing":
+                low.blit(ship_img, (player_rect.centerx // SCALE - 7, player_rect.centery // SCALE - 7))
+            draw_text_center(low, "SCORE: " + str(score), WHITE, cx, 6, 2)
+            draw_text_center(low, phase_name, YELLOW, cx, 24)
             if game_state == "gameover":
-                restart_btn.update(mouse_pos)
-                overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-                overlay.fill((0, 0, 0, 180))
-                screen.blit(overlay, (0, 0))
-                draw_text_center(screen, "SYSTEM FAILURE", title_font, (255, 80, 80), WIDTH // 2, 280)
-                draw_text_center(screen, f"SCORE: {score}", ui_font, WHITE, WIDTH // 2, 360)
-                draw_text_center(screen, f"BEST: {high_score}", small_font, ACCENT, WIDTH // 2, 410)
-                restart_btn.draw(screen)
+                retry_btn.update(mouse_pos)
+                low.blit(dim, (0, 0))
+                draw_text_center(low, "GAME", RED, cx, 36, 4)
+                draw_text_center(low, "OVER", RED, cx, 68, 4)
+                draw_text_center(low, "SCORE: " + str(score), WHITE, cx, 104, 2)
+                draw_text_center(low, "BEST: " + str(high_score), YELLOW, cx, 124)
+                retry_btn.draw(low)
+                draw_text_center(low, "PRESS R OR TAP", GREY, cx, 168)
+
+        # ---- present: nearest-neighbour upscale (shake by shifting the result) ----
+        if shake_amount > 0:
+            amt = int(shake_amount) // SCALE
+            ox = random.randint(-amt, amt) * SCALE
+            oy = random.randint(-amt, amt) * SCALE
+            pygame.transform.scale(low, (WIDTH, HEIGHT), scaled)
+            screen.fill(BG)
+            screen.blit(scaled, (ox, oy))
+            shake_amount = max(0.0, shake_amount - 60 * dt)
+        else:
+            pygame.transform.scale(low, (WIDTH, HEIGHT), screen)
 
         pygame.display.flip()
         await asyncio.sleep(0)
 
     pygame.quit()
 
+
 if __name__ == "__main__":
     try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(game_loop())
-    except RuntimeError:
-        asyncio.run(game_loop())
-
-
-
-
+        loop = asyncio.get_running_l
