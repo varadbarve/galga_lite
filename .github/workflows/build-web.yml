@@ -15,11 +15,15 @@ jobs:
         with:
           python-version: "3.12"
       - run: |
-          pip install -r requirements.txt || true
-          pip install pygbag
+          pip install --upgrade pygbag
+          mkdir -p /tmp/galga_lite
+          cp main.py /tmp/galga_lite/
+          cp -r assets /tmp/galga_lite/
+          cd /tmp/galga_lite
           python -m pygbag --build .
+          cd "$GITHUB_WORKSPACE"
           rm -rf web-dist
-          cp -r build/web web-dist
+          cp -r /tmp/galga_lite/build/web web-dist
       - run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
