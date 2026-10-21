@@ -1,0 +1,28 @@
+name: Build web
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["main.py", "assets/**"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install -r requirements.txt || true
+          pip install pygbag
+          python -m pygbag --build .
+          rm -rf web-dist
+          cp -r build/web web-dist
+      - run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A web-dist
+          git commit -m "Rebuild web-dist" || echo "No changes"
+          git push
