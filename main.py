@@ -372,8 +372,8 @@ async def game_loop():
     stars = [Star() for _ in range(60)]
     ps = ParticleSystem()
 
-    play_btn = Button("PLAY", WIDTH // 2 - 140, 460, 280, 64, (40, 110, 230), (22, 60, 150))
-    retry_btn = Button("RETRY", WIDTH // 2 - 140, 580, 280, 64, (40, 170, 110), (22, 100, 70))
+    play_btn = Button("PLAY", WIDTH // 2 - 140, 450, 280, 80, (40, 110, 230), (22, 60, 150))
+    retry_btn = Button("RETRY", WIDTH // 2 - 140, 572, 280, 80, (40, 170, 110), (22, 100, 70))
 
     player_rect = pygame.Rect(WIDTH // 2 - 32, HEIGHT - 100, 64, 64)
     player_x = float(player_rect.x)
